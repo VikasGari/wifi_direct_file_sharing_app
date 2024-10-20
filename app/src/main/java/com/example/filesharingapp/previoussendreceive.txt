@@ -1,0 +1,173 @@
+public class SendReceive {
+        private Socket socket;
+        private InputStream inputStream;
+        private OutputStream outputStream;
+
+        public SendReceive(Socket socket) {
+            this.socket = socket;
+
+            try {
+                inputStream = socket.getInputStream();
+                outputStream = socket.getOutputStream();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        public void sendFile(List<Uri> fileUris) {
+            if (fileUris == null || fileUris.isEmpty()) {
+                Log.e("SendFile", "File URI list is null or empty. Cannot send file.");
+                return;
+            }
+            Log.d("SelectedFiles", "Number of selected files: " + fileUris.size());
+
+            new Thread(() -> {
+                for (Uri fileUri : fileUris) {
+                    try {
+                        // Same logic for opening and sending files as before
+                        ContentResolver contentResolver = getApplicationContext().getContentResolver();
+                        InputStream fileInputStream = contentResolver.openInputStream(fileUri);
+
+                        if (fileInputStream == null) {
+                            Log.e("SendFile", "Unable to open InputStream for fileUri: " + fileUri);
+                            return;
+                        }
+                        Log.d("SendFile", "Processing URI: " + fileUri.toString());
+                        Cursor cursor = contentResolver.query(fileUri, null, null, null, null);
+                        String fileName = "unknown_file";
+                        long fileSize = 0;
+
+                        if (cursor != null) {
+                            int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                            if (nameIndex != -1 && cursor.moveToFirst()) {
+                                fileName = cursor.getString(nameIndex);
+                                int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
+                                fileSize = cursor.getLong(sizeIndex);
+                            } else {
+                                Log.e("SendFile", "Cursor does not contain valid data for URI: " + fileUri);
+                                return;
+                            }
+                        } else {
+                            Log.e("SendFile", "Cursor is null for URI: " + fileUri);
+                            return;
+                        }
+
+
+                        byte[] fileNameBytes = fileName.getBytes(StandardCharsets.UTF_8);
+                        outputStream.write(ByteBuffer.allocate(Integer.BYTES).putInt(fileNameBytes.length).array());
+                        outputStream.write(fileNameBytes);
+                        outputStream.write(ByteBuffer.allocate(Long.BYTES).putLong(fileSize).array());
+
+                        byte[] buffer = new byte[1024 * 1024];
+                        int bytesRead;
+                        while ((bytesRead = fileInputStream.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, bytesRead);
+                        }
+
+                        fileInputStream.close();
+                        outputStream.flush();
+                        Log.d("SendFile", "File sent successfully.");
+
+                        if (cursor != null) {
+                            cursor.close();
+                        }
+                    } catch (IOException e) {
+                        Log.e("SendFile", "Error sending file", e);
+                    }
+                }
+                try {
+                    outputStream.flush();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                runOnUiThread(() -> Toast.makeText(getApplicationContext(), "All files sent", Toast.LENGTH_SHORT).show());
+            }).start();
+        }
+
+        public void receiveFile() {
+            new Thread(() -> {
+                FileOutputStream fileOutputStream = null;
+                try {
+                    while (true) { // Keep listening for files
+                        File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                        File shareAppDir = new File(downloadsDir, "File Sharing App");
+                        if (!shareAppDir.exists()) {
+                            shareAppDir.mkdirs(); // Create the directory if it doesn't exist
+                        }else {
+                            showToast("directory already exists");
+                        }
+
+                        // Read the file name first
+                        byte[] nameLengthBuffer = new byte[Integer.BYTES];
+                        int totalBytesRead = 0;
+                        while (totalBytesRead < Integer.BYTES) {
+                            int bytesRead = inputStream.read(nameLengthBuffer, totalBytesRead, Integer.BYTES - totalBytesRead);
+                            if (bytesRead == -1) {
+                                throw new IOException("Stream closed while reading file name length.");
+                            }
+                            totalBytesRead += bytesRead;
+                        }
+
+                        int fileNameLength = ByteBuffer.wrap(nameLengthBuffer).getInt();
+                        Log.d("ReceiveFile", "File name length: " + fileNameLength);
+                        if (fileNameLength <= 0) { // Add a sanity check
+                            runOnUiThread(() -> Toast.makeText(getApplicationContext(), "Invalid file name length.", Toast.LENGTH_SHORT).show());
+                            return;
+                        }
+
+                        byte[] fileNameBuffer = new byte[fileNameLength];
+                        totalBytesRead = 0;
+                        while (totalBytesRead < fileNameLength) {
+                            int bytesRead = inputStream.read(fileNameBuffer, totalBytesRead, fileNameLength - totalBytesRead);
+                            if (bytesRead == -1) {
+                                throw new IOException("Stream closed while reading file name.");
+                            }
+                            totalBytesRead += bytesRead;
+                        }
+
+                        String originalFileName = new String(fileNameBuffer, StandardCharsets.UTF_8);
+
+                        // Create a file with the timestamp and original name
+                        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+                        String newFileName = timeStamp + "_" + originalFileName;
+                        File file = new File(shareAppDir, newFileName);
+
+                        // Read the file size
+                        byte[] sizeBuffer = new byte[Long.BYTES];
+                        totalBytesRead = 0;
+                        while (totalBytesRead < Long.BYTES) {
+                            int bytesRead = inputStream.read(sizeBuffer, totalBytesRead, Long.BYTES - totalBytesRead);
+                            if (bytesRead == -1) {
+                                throw new IOException("Stream closed while reading file size.");
+                            }
+                            totalBytesRead += bytesRead;
+                        }
+
+                        long fileSize = ByteBuffer.wrap(sizeBuffer).getLong();
+
+                        // Reading file
+                        fileOutputStream = new FileOutputStream(file);
+                        byte[] buffer = new byte[1024 * 1024]; // 1 MB buffer
+                        totalBytesRead = 0;
+                        int bytesRead;
+                        while (totalBytesRead < fileSize && (bytesRead = inputStream.read(buffer)) != -1) {
+                            fileOutputStream.write(buffer, 0, bytesRead);
+                            totalBytesRead += bytesRead;
+                        }
+                        fileOutputStream.close();
+                        runOnUiThread(() -> Toast.makeText(getApplicationContext(), "File received: " + file.getAbsolutePath(), Toast.LENGTH_SHORT).show());
+                    }
+                } catch (IOException e) {
+                    Log.e("ReceiveFile", "Error receiving file", e);
+                } finally {
+                    if (fileOutputStream != null) {
+                        try {
+                            fileOutputStream.close();
+                        } catch (IOException e) {
+                            Log.e("ReceiveFile", "Error closing file output stream", e);
+                        }
+                    }
+                }
+            }).start();
+        }
+    }
