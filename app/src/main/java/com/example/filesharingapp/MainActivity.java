@@ -160,7 +160,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleLocationPermissionResult(int[] grantResults) {
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            // Permission granted, proceed with location-related functionality
+            // Permission granted
         } else {
             // Permission denied, show a message to the user
             showToast("Location permission is required for this feature.");
@@ -170,7 +170,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleStoragePermissionResult(int[] grantResults, String message) {
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            // Permission granted, proceed with storage-related functionality
+            // Permission granted
         } else {
             // Permission denied, show a message to the user
             showToast(message);
@@ -180,7 +180,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleNearbyDevicesPermissionResult(int[] grantResults) {
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            // Permission granted, proceed with nearby device functionality
+            // Permission granted
         } else {
             // Permission denied, redirect to settings
             showToast("Nearby devices permission is needed to discover devices.");
@@ -326,7 +326,7 @@ public class MainActivity extends AppCompatActivity {
     private void initialWork() {
         btnOnOff = findViewById(R.id.onOff);
         btnDiscover = findViewById(R.id.discover);
-        btnSelectFile = findViewById(R.id.selectFileButton); // For file selection
+        btnSelectFile = findViewById(R.id.selectFileButton);
         listView = findViewById(R.id.peerListView);
         receivingFileNameTextView = findViewById(R.id.receivingFileNameTextView);
         sendingFileNameTextView = findViewById(R.id.sendingFileNameTextView);
@@ -402,7 +402,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Clean up any resources if needed
     }
 
     private class ServerClass extends Thread {
@@ -475,7 +474,6 @@ public class MainActivity extends AppCompatActivity {
                 for (Uri fileUri : fileUris) {
                     try {
                         Thread.sleep(1000);
-                        // Same logic for opening and sending files as before
                         ContentResolver contentResolver = getApplicationContext().getContentResolver();
                         InputStream fileInputStream = contentResolver.openInputStream(fileUri);
 
